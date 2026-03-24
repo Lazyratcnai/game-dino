@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>恐龙远徙之谜</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background: #1a1a2e;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            width: 960px;
+            height: 600px;
+            background: #0f3460;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 0 40px rgba(0,0,0,0.5);
+        }
+
+        /* 触屏响应式：容器填满屏幕并保持比例 */
+        @media (max-width: 960px) {
+            body, html { margin: 0; padding: 0; overflow: hidden; background: #1a1a2e; }
+            #game-container {
+                width: 100vw !important;
+                height: 100dvh !important; /* iOS Safari 用 dvh */
+                max-height: 100vh !important;
+                border-radius: 0 !important;
+                /* 保持 960:600 比例，宽度100vw时高度62.5vw */
+                aspect-ratio: 960 / 600;
+            }
+            #game-canvas {
+                width: 100% !important;
+                height: 100% !important;
+            }
+        }
+
+        /* 竖屏手机特殊处理：高度优先 */
+        @media (max-height: 500px) {
+            #game-container {
+                height: 100vh !important;
+                width: 177.78vh !important; /* 600:337 ≈ 1.778 */
+                aspect-ratio: unset;
+            }
+        }
+
+        canvas {
+            display: block;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+        }
+        #ui-layer > * { pointer-events: auto; }
+
+        /* 顶部状态栏 */
+        #status-bar {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 48px;
+            background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%);
+            display: flex;
+            align-items: center;
+            padding: 8px 16px;
+            gap: 16px;
+        }
+        .status-item {
+            color: #ffd700;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        #chapter-title {
+            position: absolute;
+            top: 8px; right: 16px;
+            color: #fff;
+            font-size: 13px;
+            opacity: 0.8;
+            text-align: right;
+        }
+
+        /* 底部工具栏 */
+        #toolbar {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 72px;
+            background: linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 12px;
+            gap: 8px;
+        }
+        .tool-btn {
+            width: 52px; height: 52px;
+            border-radius: 12px;
+            border: 2px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            font-size: 24px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            backdrop-filter: blur(4px);
+        }
+        .tool-btn span {
+            font-size: 10px;
+            margin-top: 2px;
+        }
+        .tool-btn:hover, .tool-btn.active {
+            background: rgba(255,215,0,0.3);
+            border-color: #ffd700;
+            transform: translateY(-2px);
+        }
+
+        /* 对话框 */
+        #dialog-box {
+            position: absolute;
+            bottom: 80px; left: 50%;
+            transform: translateX(-50%);
+            width: 860px;
+            background: rgba(10,10,30,0.95);
+            border: 2px solid #ffd700;
+            border-radius: 16px;
+            padding: 20px 24px;
+            display: none;
+            pointer-events: auto;
+        }
+        #dialog-speaker {
+            color: #ffd700;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        #dialog-text {
+            color: #fff;
+            font-size: 16px;
+            line-height: 1.7;
+            min-height: 48px;
+        }
+        #dialog-options {
+            margin-top: 12px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .dialog-opt {
+            padding: 6px 16px;
+            background: rgba(255,215,0,0.2);
+            border: 1px solid #ffd700;
+            border-radius: 20px;
+            color: #ffd700;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .dialog-opt:hover {
+            background: rgba(255,215,0,0.5);
+            color: #000;
+        }
+        #dialog-next {
+            position: absolute;
+            bottom: 12px; right: 20px;
+            color: rgba(255,255,255,0.5);
+            font-size: 12px;
+            animation: blink 1s infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* 提示气泡 */
+        #hint-bubble {
+            position: absolute;
+            top: 60px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.85);
+            border: 1px solid #ffd700;
+            border-radius: 8px;
+            padding: 8px 16px;
+            color: #ffd700;
+            font-size: 13px;
+            display: none;
+            pointer-events: auto;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        /* 建造菜单 */
+        #build-menu {
+            position: absolute;
+            bottom: 80px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10,10,30,0.95);
+            border: 2px solid #ffd700;
+            border-radius: 16px;
+            padding: 16px;
+            display: none;
+            pointer-events: auto;
+            min-width: 300px;
+        }
+        #build-menu h3 {
+            color: #ffd700;
+            font-size: 14px;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        .build-grid {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .build-item {
+            width: 80px;
+            text-align: center;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.2s;
+        }
+        .build-item:hover {
+            border-color: #ffd700;
+            background: rgba(255,215,0,0.1);
+        }
+        .build-item .b-icon {
+            font-size: 28px;
+        }
+        .build-item .b-name {
+            color: #fff;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+        .build-item .b-cost {
+            color: #aaa;
+            font-size: 10px;
+        }
+        .build-item.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* 剧情覆盖层 */
+        #story-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        #story-overlay .story-title {
+            color: #ffd700;
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        #story-overlay .story-text {
+            color: #e0e0e0;
+            font-size: 16px;
+            line-height: 2;
+            text-align: center;
+            max-width: 700px;
+            padding: 0 20px;
+        }
+        #story-overlay .story-btn {
+            margin-top: 30px;
+            padding: 10px 32px;
+            background: #ffd700;
+            color: #1a1a2e;
+            border: none;
+            border-radius: 25px;
+            font-size: 15px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        #story-overlay .story-btn:hover {
+            transform: scale(1.05);
+            background: #fff;
+        }
+
+        /* 胜利/失败覆盖层 */
+        #result-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.88);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+        }
+        #result-overlay .result-icon { font-size: 60px; margin-bottom: 16px; }
+        #result-overlay .result-title {
+            color: #ffd700;
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 12px;
+        }
+        #result-overlay .result-text {
+            color: #ccc;
+            font-size: 15px;
+            margin-bottom: 24px;
+            text-align: center;
+            max-width: 500px;
+            padding: 0 20px;
+        }
+        #result-overlay .result-btn {
+            padding: 10px 32px;
+            background: #ffd700;
+            color: #1a1a2e;
+            border: none;
+            border-radius: 25px;
+            font-size: 15px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        /* 战斗条 */
+        #battle-hud {
+            position: absolute;
+            top: 50px; left: 16px;
+            display: none;
+        }
+        .battle-stat {
+            color: #fff;
+            font-size: 13px;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .stat-bar {
+            width: 100px; height: 8px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .stat-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+        .hp-fill { background: #e74c3c; }
+        .mp-fill { background: #3498db; }
+
+        /* 怪物波次提示 */
+        #wave-hint {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #e74c3c;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            display: none;
+            animation: fadeInOut 2s forwards;
+            text-shadow: 0 0 20px #e74c3c;
+        }
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translate(-50%,-50%) scale(0.8); }
+            20% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+            80% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        /* 开始界面 */
+        #start-screen {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: linear-gradient(135deg, #0f3460 0%, #1a1a2e 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 300;
+        }
+
+        /* ============================================================
+           触屏支持：虚拟摇杆
+           ============================================================ */
+        #joystick-zone {
+            display: none;
+            position: absolute;
+            bottom: 5%; left: 5%;
+            width: 18vw; height: 18vw;
+            max-width: 100px; max-height: 100px;
+            min-width: 70px; min-height: 70px;
+            z-index: 50;
+        }
+        #joystick-base {
+            position: absolute;
+            width: 100%; height: 100%;
+            background: rgba(255,255,255,0.1);
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            backdrop-filter: blur(4px);
+        }
+        #joystick-thumb {
+            position: absolute;
+            width: 40%; height: 40%;
+            background: rgba(255,215,0,0.9);
+            border-radius: 50%;
+            left: 50%; top: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 12px rgba(255,215,0,0.6);
+            transition: transform 0.05s;
+        }
+
+        /* 触屏互动按钮 */
+        #btn-interact {
+            display: none;
+            position: absolute;
+            bottom: 8%; right: 6%;
+            width: 14vw; height: 14vw;
+            max-width: 80px; max-height: 80px;
+            min-width: 56px; min-height: 56px;
+            border-radius: 50%;
+            background: rgba(255,215,0,0.9);
+            border: 3px solid #fff;
+            color: #1a1a2e;
+            font-size: 5vw;
+            cursor: pointer;
+            z-index: 50;
+            box-shadow: 0 0 20px rgba(255,215,0,0.5);
+            transition: transform 0.1s;
+        }
+        #btn-interact:active {
+            transform: scale(0.9);
+        }
+
+        /* 触屏设备显示摇杆和按钮 */
+        @media (hover: none) and (pointer: coarse) {
+            #joystick-zone { display: block; }
+            #btn-interact { display: flex; align-items: center; justify-content: center; }
+            #toolbar { display: none !important; }
+        }
+        #start-screen .game-logo {
+            font-size: 42px;
+            font-weight: bold;
+            color: #ffd700;
+            text-shadow: 0 0 30px rgba(255,215,0,0.5);
+            margin-bottom: 8px;
+        }
+        #start-screen .game-sub {
+            font-size: 14px;
+            color: rgba(255,255,255,0.6);
+            margin-bottom: 40px;
+        }
+        #start-screen .start-btn {
+            padding: 14px 48px;
+            background: #ffd700;
+            color: #1a1a2e;
+            border: none;
+            border-radius: 30px;
+            font-size: 18px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-bottom: 16px;
+            transition: all 0.2s;
+        }
+        #start-screen .start-btn:hover {
+            transform: scale(1.05);
+            background: #fff;
+        }
+        #start-screen .version {
+            font-size: 11px;
+            color: rgba(255,255,255,0.3);
+        }
+        #start-screen .cover-art {
+            font-size: 80px;
+            margin-bottom: 20px;
+            filter: drop-shadow(0 0 20px rgba(255,215,0,0.3));
+        }
+    </style>
+</head>
+<body>
+<div id="game-container">
+    <canvas id="game-canvas" width="960" height="600"></canvas>
+    <div id="ui-layer">
+
+        <!-- 开始界面 -->
+        <div id="start-screen">
+            <div class="cover-art">🦕</div>
+            <div class="game-logo">恐龙远徙之谜</div>
+            <div class="game-sub">一段跨越8500万年的文明传承</div>
+            <button class="start-btn" id="btn-start">开始冒险</button>
+            <div class="version">v0.1 原型体验版</div>
+        </div>
+
+        <!-- 状态栏 -->
+        <div id="status-bar" style="display:none">
+            <div class="status-item">🏰 <span id="ui-gold">💰 100</span></div>
+            <div class="status-item">⭐ <span id="ui-star">探索 0/10</span></div>
+            <div class="status-item" id="ui-chapter-info">📜 第1章</div>
+            <div id="chapter-title"></div>
+        </div>
+
+        <!-- 战斗HUD -->
+        <div id="battle-hud">
+            <div class="battle-stat">
+                ❤️ <div class="stat-bar"><div class="stat-bar-fill hp-fill" id="princess-hp" style="width:100%"></div></div>
+                <span id="princess-hp-text">100</span>
+            </div>
+            <div class="battle-stat">
+                ✨ <div class="stat-bar"><div class="stat-bar-fill mp-fill" id="princess-mp" style="width:100%"></div></div>
+                <span id="princess-mp-text">50</span>
+            </div>
+        </div>
+
+        <!-- 波次提示 -->
+        <div id="wave-hint"></div>
+
+        <!-- 底部工具栏 -->
+        <div id="toolbar" style="display:none">
+            <button class="tool-btn" id="btn-explore">🔍<span>探索</span></button>
+            <button class="tool-btn" id="btn-build">🏗️<span>建造</span></button>
+            <button class="tool-btn" id="btn-battle">⚔️<span>战斗</span></button>
+            <button class="tool-btn" id="btn-story">📖<span>剧情</span></button>
+            <button class="tool-btn" id="btn-map">🗺️<span>地图</span></button>
+        </div>
+
+        <!-- 建造菜单 -->
+        <div id="build-menu">
+            <h3>🏗️ 建造建筑</h3>
+            <div class="build-grid" id="build-grid"></div>
+        </div>
+
+        <!-- 提示气泡 -->
+        <div id="hint-bubble"></div>
+
+        <!-- 对话框 -->
+        <div id="dialog-box">
+            <div id="dialog-speaker"></div>
+            <div id="dialog-text"></div>
+            <div id="dialog-options"></div>
+            <div id="dialog-next">▶ 点击继续</div>
+        </div>
+
+        <!-- 剧情覆盖层 -->
+        <div id="story-overlay" style="display:none">
+            <div class="story-title" id="story-title"></div>
+            <div class="story-text" id="story-text"></div>
+            <button class="story-btn" id="story-btn">继续</button>
+        </div>
+
+        <!-- 结果覆盖层 -->
+        <div id="result-overlay">
+            <div class="result-icon" id="result-icon"></div>
+            <div class="result-title" id="result-title"></div>
+            <div class="result-text" id="result-text"></div>
+            <button class="result-btn" id="result-btn">下一章</button>
+        </div>
+
+        <!-- 虚拟摇杆 -->
+        <div id="joystick-zone">
+            <div id="joystick-base">
+                <div id="joystick-thumb"></div>
+            </div>
+        </div>
+
+        <!-- 触屏互动按钮 -->
+        <button id="btn-interact">✨ 互动</button>
+    </div>
+</div>
+
+<script src="data.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
