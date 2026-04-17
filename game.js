@@ -27,6 +27,8 @@ var Game = {
     story: { active: false, queue: [], current: 0, storyIdx: 0 },
     ui: { mode: "explore", selectedBuild: null, placingBuild: false, showingHint: false, hintTimer: 0 },
 
+    skillIndex: 0,
+
     keys: {}, mouse: { x: 0, y: 0 }, touchStart: null,
     camW: 960, camH: 600,
     joystick: { active: false, dx: 0, dy: 0 },
@@ -473,11 +475,13 @@ var Game = {
         const p = this.player;
         if (p.mp < 15) { this.showHint("MP不足！"); return; }
         const skills = [
-            { id: "fireball", icon: "🔥", mpCost: 10, damage: 25 },
-            { id: "heal", icon: "✨", mpCost: 20, heal: 30 },
-            { id: "shield", icon: "🛡️", mpCost: 15, shield: true }
+            { id: "fireball", icon: "🔥", mpCost: 10, damage: 25, name: "火球" },
+            { id: "heal", icon: "✨", mpCost: 20, heal: 30, name: "治愈" },
+            { id: "shield", icon: "🛡️", mpCost: 15, shield: true, name: "护盾" }
         ];
-        const skill = skills[1]; // 默认治愈
+        // 简单轮换：火球 -> 治愈 -> 护盾
+        const skill = skills[this.skillIndex % 3];
+        this.skillIndex = (this.skillIndex + 1) % 3;
         if (p.mp < skill.mpCost) { this.showHint("MP不足！"); return; }
         p.mp -= skill.mpCost;
         this.spawnParticle(p.x + p.w/2, p.y, skill.icon, "#3498db");
